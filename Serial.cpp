@@ -14,7 +14,7 @@ int main()
 
     struct termios tio;
     tcgetattr(serialPort, &tio);
-    cfsetospeed(&tio, B115200); // 设置波特率为9600
+    cfsetospeed(&tio, B115200); // set baud rate
     tcsetattr(serialPort, TCSANOW, &tio);
 
     // char sendData[] = "Hello, ESP32!";
