@@ -57,43 +57,105 @@ int main() {
 }
 
 /*
-// 修改解析串口数据的函数，添加条件判断
-void parseSensorData(const char *data, struct SensorData *sensorData) {
-    // 添加判断条件，确保数据包含有效的传感器信息
-    if (strstr(data, "id:") == NULL || strstr(data, "rtt_est:") == NULL || strstr(data, "rtt_raw:") == NULL ||
-        strstr(data, "dist_est:") == NULL || strstr(data, "average rssi:") == NULL || strstr(data, "num_frames:") == NULL) {
-        // 数据格式不符合预期，不执行解析
-        printf("Invalid data format: %s\n", data);
-        return;
+#include <ros/ros.h>
+#include <std_msgs/String.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <termios.h>
+#include <sys/time.h>
+#include <ftm_msgs/ftm.h>
+#include <string>
+
+bool parseSensorData(const char *buffer, ftm_msgs::ftm& msg) {
+    std::string data(buffer);
+
+    if (data.find("id") == std::string::npos || data.find("rtt_est") == std::string::npos ||
+        data.find("rtt_raw") == std::string::npos || data.find("dist_est") == std::string::npos ||
+        data.find("average rssi") == std::string::npos || data.find("num_frames") == std::string::npos) {
+
+        printf("Invalid data format: %s\n", data.c_str());
+        return false;
     }
 
-    char tempData[strlen(data) + 1];
-    strcpy(tempData, data);
+    std::istringstream iss(data);
+    std::string token;
+    while (std::getline(iss, token, ',')) {
+        size_t colonPos = token.find(':');
+        if (colonPos != std::string::npos) {
+            std::string key = token.substr(0, colonPos);
+            std::string value = token.substr(colonPos + 1);
 
-    char *token = strtok(tempData, ",");
-    while (token != NULL) {
-        char key[20];
-        int value;
-
-        // 添加条件判断，确保解析的键值对格式正确
-        if (sscanf(token, "%19[^:]:%d", key, &value) == 2) {
-            if (strcmp(key, "id") == 0) {
-                strncpy(sensorData->id, token + 3, sizeof(sensorData->id) - 1);
-                sensorData->id[sizeof(sensorData->id) - 1] = '\0';
-            } else if (strcmp(key, "rtt_est") == 0) {
-                sensorData->rtt_est = value;
-            } else if (strcmp(key, "rtt_raw") == 0) {
-                sensorData->rtt_raw = value;
-            } else if (strcmp(key, "dist_est") == 0) {
-                sensorData->dist_est = value;
-            } else if (strcmp(key, "average rssi") == 0) {
-                sensorData->average_rssi = value;
-            } else if (strcmp(key, "num_frames") == 0) {
-                sensorData->num_frames = value;
+            if (key == "id") {
+                msg.anchorId = value;
+            } else if (key == "rtt_est") {
+                // Handle rtt_est if needed
+            } else if (key == "rtt_raw") {
+                msg.rtt_raw = std::stoi(value);
+            } else if (key == "dist_est") {
+                msg.dist_est = std::stoi(value);
+            } else if (key == "average rssi") {
+                msg.rssi = std::stoi(value);
+            } else if (key == "num_frames") {
+                msg.num_frames = std::stoi(value);
             }
         }
-
-        token = strtok(NULL, ",");
     }
+
+    return true;
+}
+
+int main(int argc, char *argv[]) {
+    // ...（略去前面的代码）
+
+    bool receivedCompleteData = false;
+
+    while (ros::ok()) {
+        printf("ftm_node running\n");
+
+        FD_ZERO(&readSet);
+        FD_SET(serialPort, &readSet);
+
+        timeout.tv_sec = 1;
+        timeout.tv_usec = 0;
+
+        int ready = select(serialPort + 1, &readSet, NULL, NULL, &timeout);
+
+        if (ready > 0) {
+            if (FD_ISSET(serialPort, &readSet)) {
+                bytesRead = read(serialPort, buffer + totalBytesRead, sizeof(buffer) - 1 - totalBytesRead);
+                if (bytesRead > 0) {
+                    totalBytesRead += bytesRead;
+                    buffer[totalBytesRead] = '\0';
+
+                    if (strstr(buffer, "num_frames") != NULL) {
+                        receivedCompleteData = true;
+                    }
+                }
+            }
+        } else if (ready == 0) {
+            if (receivedCompleteData) {
+                ftm_msgs::ftm msg;
+                if (parseSensorData(buffer, msg)) {
+                    pub.publish(msg);
+                }
+
+                receivedCompleteData = false;
+                totalBytesRead = 0;
+                memset(buffer, 0, sizeof(buffer));
+            }
+        } else {
+            perror("select");
+            break;
+        }
+
+        ros::spinOnce();
+        loop_rate.sleep();
+    }
+
+    close(serialPort);
+    return 0;
 }
 */
