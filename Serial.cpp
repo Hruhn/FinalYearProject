@@ -1,45 +1,79 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <termios.h>
 
-#define MAX_DATA_LENGTH 1000 // 假设数据最大长度为1000
+#define SERIAL_DEVICE "/dev/ttyS0" // 串口设备，根据你的设置修改
+#define SERVER_IP "192.168.3.211"  // 服务器 IP 地址
+#define SERVER_PORT 8080           // 服务器端口号，根据你的设置修改
 
 int main() {
-    char received_data[MAX_DATA_LENGTH];
-    int data_count[6] = {0}; // 记录接收到的id1到id6数据个数
+
+    int serialPort = open("/dev/ttyUSB0", O_RDWR);
+    if (serialPort < 0)
+    {
+        perror("Error opening serial port");
+        return 1;
+    }
+
+    struct termios tio;
+    tcgetattr(serialPort, &tio);
+    cfsetospeed(&tio, B115200); // 设置波特率为115200
+    tcsetattr(serialPort, TCSANOW, &tio);
+
+    // char sendData[] = "Hello, ESP32!";
+    // write(serialPort, sendData, sizeof(sendData));
+
+    char receiveData[100];
+    int bytesRead;
+
+    int sock;
+    struct sockaddr_in server_addr;
+
+
+    // 创建TCP套接字
+    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        fprintf(stderr, "Unable to create socket: %s\n", strerror(errno));
+        return 1;
+    }
+
+    // 设置服务器地址信息
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(SERVER_PORT);
+    if (inet_pton(AF_INET, SERVER_IP, &server_addr.sin_addr) <= 0) {
+        fprintf(stderr, "Invalid address or address not supported\n");
+        return 1;
+    }
+
+    // 连接到服务器
+    if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        fprintf(stderr, "Connection failed: %s\n", strerror(errno));
+        return 1;
+    }
 
     while (1) {
-        // 假设这里是你接收串口数据的代码，将接收到的数据存储到 received_data 中
-        // 这里使用 fgets 来模拟接收数据，实际情况可能需要用到串口相关的库函数来接收数据
-        fgets(received_data, MAX_DATA_LENGTH, stdin); // 从标准输入中读取模拟的数据
-
-        // 判断接收到的数据是否包含 id1 到 id6 的一系列数据
-        for (int i = 1; i <= 6; ++i) {
-            char id_str[10];
-            sprintf(id_str, "id%d:", i); // 构建id字符串
-
-            if (strstr(received_data, id_str) != NULL) {
-                data_count[i - 1]++; // 更新对应id的数据个数
-            }
-        }
-
-        // 检查是否接收到 id1 到 id6 的一系列数据
-        int all_data_received = 1;
-        for (int i = 0; i < 6; ++i) {
-            if (data_count[i] == 0) {
-                all_data_received = 0;
+        bytesRead = read(serialPort, receiveData, sizeof(receiveData));
+        receiveData[bytesRead] = '\0';
+        if (bytesRead > 0) {
+            if (send(sock, receiveData, bytesRead, 0) != bytesRead) {
+                fprintf(stderr, "Failed to send data to server\n");
                 break;
             }
         }
-
-        if (all_data_received) {
-            // 所有数据都已接收到，进行数据处理
-            printf("Received all data for id1 to id6.\n");
-            // 在这里进行你的数据处理操作
-
-            // 处理完数据后，重置数据计数器，以便下一轮接收
-            memset(data_count, 0, sizeof(data_count));
-        }
     }
+
+    // 关闭连接和串口
+    close(sock);
+    close(serialPort);
 
     return 0;
 }
+
+
